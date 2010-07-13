@@ -1,4 +1,4 @@
-export(pglm, ordinal)
+export(pglm, ordinal, negbin)
 
 
 

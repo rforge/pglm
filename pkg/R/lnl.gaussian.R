@@ -1,55 +1,7 @@
 lnl.gaussian <- function(param, y, X, id, model, link, rn, gradient = FALSE, hessian = FALSE,
-                         opposite = FALSE, direction = rep(0, length(param)),
+                         other = NULL, opposite = FALSE, direction = rep(0, length(param)),
                          initial.value = NULL, steptol = 1E-01){
-  opposite <- ifelse(opposite, -1, +1)
-  Ti <- as.numeric(table(id)[as.character(id)])
-  N <- length(y)
-  n <- length(unique(id))
-  names.id <- as.character(unique(id))
-  step <- 2
-  Xb <- X$Between
-  yb <- y$Between
-  Xw <- X$within
-  yw <- y$within
-  Xp <- Xw + Xb
-  yp <- yw + yb
-  K <- ncol(Xb)
-  repeat{
-    step <- step / 2
-    if (step < steptol) break
-    beta <- param[1L:K] + step * direction[1L:K]
-    gamma <- param[K+1L] + step * direction[K+1L]
-    sig2 <- param[K+2L] + step * direction[K+2L]
-    ep <- yp - as.numeric(crossprod(t(Xp), beta))
-    eb <- yb - as.numeric(crossprod(t(Xb), beta))
-    ew <- yw - as.numeric(crossprod(t(Xw), beta))
-    SSRB <- sum(eb^2)
-    SSRW <- sum(ew^2)
-    SSRP <- sum(ep^2)
-    lnL <- - 1 / 2 * log(2 * pi) - 1 / 2 * log(sig2) - 1 / (2 * Ti) * log(1 + Ti * gamma) -
-      1 / 2 * ep^2 / sig2 + 1 / 2 * (Ti * gamma) / (1 + Ti * gamma) * eb^2
-    lnL <- opposite * sum(lnL)
-
-    lnL <- -N/2*log(2*pi)-N/2*log(sig2)-1/2*sum(log(1+Ti*gamma))-1/(2*sig2)*SSRP
-    +1/2*sum(gamma/(1+Ti*gamma)*Ti^2*unique(eb)^2)
-    
-    if (is.null(initial.value) || lnL <= initial.value) break
-  }
-  if (gradient){
-    gb <- ep / sig2 * Xp - Ti * gamma / (1 + Ti * gamma) * eb * Xb
-    gg <- - 1 / (2  * (1 + Ti * gamma)) + Ti * eb^2 / (2 * (1 + gamma * Ti)^2)
-    gs <- ep^2 / (2 * sig2^2) - 1 / (2 * sig2)
-    gradi <- cbind(gb, gg, gs)
-    attr(lnL, "gradient") <- opposite * gradi
-  }
-  lnL
-}
-
-
-lnl.gaussian <- function(param, y, X, id, model, link, rn, gradient = FALSE, hessian = FALSE,
-                         opposite = FALSE, direction = rep(0, length(param)),
-                         initial.value = NULL, steptol = 1E-01){
-  type <- "sd"
+  if (is.null(other)) other <- "sd"
   opposite <- ifelse(opposite, -1, +1)
   Ti <- as.numeric(table(id)[as.character(id)])
   T <- Ti[1]
@@ -64,7 +16,7 @@ lnl.gaussian <- function(param, y, X, id, model, link, rn, gradient = FALSE, hes
     step <- step / 2
     if (step < steptol) break
     beta <- param[1L:K] + step * direction[1L:K]
-    if (type == "sd"){
+    if (other == "sd"){
       sigmu <- param[K+1L] + step * direction[K+1L]
       sigeps <- param[K+2L] + step * direction[K+2L]
       gamma <- sigmu^2 / sigeps^2
@@ -76,28 +28,52 @@ lnl.gaussian <- function(param, y, X, id, model, link, rn, gradient = FALSE, hes
     }
     eb <- as.numeric(yb) - as.numeric(crossprod(t(Xb), beta))
     e <- y - as.numeric(crossprod(t(X), beta))
-    SSRB <- T * sum(eb^2)
-    SSRP <- sum(e^2)
-    lnL <- -N/2*log(2*pi)-N/2*log(sig2)-n/2*log(1+T*gamma)-
-      1/2*SSRP/sig2+1/2*n*T^2*gamma/(1+T*gamma)*SSRB
-    lnL <- - 1 / 2 * (log(2 * pi) + log(sig2) + 1 / T * log(1 + gamma * T) +
-                     e^2 / sig2 - gamma * T / (1 + gamma * T) * eb^2 / sig2)
-    lnL <- sum(lnL)
     
+    lnL <- - 1 / 2 * (log(2 * pi) + log(sig2) + 1 / Ti * log(1 + gamma * Ti) +
+                     e^2 / sig2 - gamma * Ti / (1 + gamma * Ti) * eb^2 / sig2)
+    
+    lnL <- sum(lnL)
     if (is.null(initial.value) || lnL <= initial.value) break
   }
   if (gradient){
-    gb <- e / sig2 * X - T * gamma / (1 + T * gamma) * eb * Xb /sig2
-    gg <- - 1 / (2  * (1 + T * gamma)) + T * eb^2 / (2 * (1 + gamma * Ti)^2) / sig2
+    gb <- e / sig2 * X - Ti * gamma / (1 + Ti * gamma) * eb * Xb /sig2
+    gg <- - 1 / (2  * (1 + Ti * gamma)) + Ti * eb^2 / (2 * (1 + gamma * Ti)^2) / sig2
     gs <- - 1 / (2 * sig2) + e^2 / (2 * sig2^2) -
-      gamma * T / (1 + gamma * T) * eb^2 / (2 * sig2^2)
+      gamma * Ti / (1 + gamma * Ti) * eb^2 / (2 * sig2^2)
     gradi <- cbind(gb, gg, gs)
-    if (type == "sd"){
+    if (other == "sd"){
+      ogradi <- gradi
       gmu <- 2 * sigmu / sigeps^2 * gg
       geps <- 2 * sigeps * gs - 2 * sigmu^2 / sigeps^3 * gg
       gradi <- cbind(gb, gmu, geps)
     }
     attr(lnL, "gradient") <- opposite * gradi
   }
+  if (hessian){
+    hbb <- -  crossprod(X) / sig2 + crossprod(sqrt(Ti * gamma / (1 + Ti * gamma)) * Xb) /sig2
+    hbl <- - apply(Ti / (1 + gamma * Ti)^2 * eb * Xb / sig2, 2, sum)
+    hll <- sum(Ti / (2 * (1 + gamma * Ti)^2) - Ti^2 / (1 + gamma * Ti)^3 * eb^2 / sig2)
+    hbs <- apply(- e * X / sig2^2 + Ti * gamma / (1 + Ti * gamma) * eb * Xb /sig2^2, 2, sum)
+    hls <- sum(- 1 / 2 * eb^2 / sig2^2 * Ti / (1 + gamma * Ti)^2)
+    hss <- sum(1 / (2 * sig2^2) - e^2 / sig2^3 +
+               gamma * Ti * eb^2 / ((1 + gamma * Ti) * sig2^3))
+    H <- rbind( cbind(hbb, hbl, hbs), c(hbl, hll, hls), c(hbs, hls, hss))
+    OH <- H
+    H[1L:K, K+1L] <- H[K+1L, 1L:K] <- H[1L:K, K+1L] * 2 * sqrt(gamma/sig2)
+    H[1L:K, K+2L] <- H[K+2L, 1L:K] <- -2 * gamma / sqrt(sig2) * OH[1L:K, K+1L] +
+      2 * sqrt(sig2) * OH[1L:K, K+2L]
+    H[K+1L, K+1L] <- 4 * gamma / sig2 * OH[K+1L, K+1L] + 2 * sum(ogradi[, K+1L])
+#    H[K+1L, K+2L] <- H[K+2L, K+1L] <- 4 * sqrt(gamma) * OH[K+1L, K+2L] -
+#      2 * sqrt(gamma / sig2) * sum(ogradi[, K+1L])
+
+    H[K+1L, K+2L] <- H[K+2L, K+1L] <- 2 * sqrt(gamma/sig2) *
+      (2 * sqrt(sig2) * OH[K+1L, K+2L] - 2 / sqrt(sig2) * sum(ogradi[, K+1L]) -
+       2 * gamma / sqrt(sig2) * OH[K+1L, K+1L])
+
+    H[K+2L, K+2L] <- 4 * sig2 * OH[K+2L, K+2L] + 2 * sum(ogradi[, K+2L]) -
+      4 * gamma * OH[K+1L, K+2L] + 2 * gamma / sig2 * sum(ogradi[, K+1L])
+    attr(lnL, "hessian") <- opposite * H
+  }
   lnL
 }
+

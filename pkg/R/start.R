@@ -1,13 +1,10 @@
-starting.values <- function(family, link, model, Kw, X, y, id, cl, start){
-
+starting.values <- function(family, link, model, Kw, X, y, id, cl, start, other){
   # the relevant length for the start vector provided by the user is
   # either : 0 (nothing), K (the length of the beta vector or the
   # number of the additional parameter (1 most of the time, but 2 for
   # the negbin model)
-  nframe <- length(sys.calls())
   ls <- length(start)
   K <- ncol(X)
-
   if (family == "binomial"){
     if (model == "pooling"){
       # use Phi^-1(ybar) as starting value for the intercept and 0 for
@@ -128,17 +125,36 @@ starting.values <- function(family, link, model, Kw, X, y, id, cl, start){
   }
     
   if (family == "gaussian"){
+    if (is.null(other)) other <- "sd"
     if (is.null(start)){
-      startcl <- cl
-      startcl[[1]] <- as.name("plm")
-      startcl$family<- NULL
-      startcl$model <- "random"
-      glmest <- eval(startcl, parent.frame())
-      theta <- glmest$ercomp$theta
-      sigma2 <- glmest$ercomp$sigma2$idios
-      sigmu <- glmest$ercomp$sigma2$id^0.5
-      sigeps <- glmest$ercomp$sigma2$idiod^0.5
-      start <- c(coef(glmest), sigmu = sigmu, sigeps = sigeps)
+      if (FALSE){
+        startcl <- cl
+        startcl[[1]] <- as.name("plm")
+        startcl$family<- NULL
+        startcl$model <- "random"
+        glmest <- eval(startcl, parent.frame())
+        theta <- glmest$ercomp$theta
+        sigma2 <- glmest$ercomp$sigma2$idios
+        sigmu <- glmest$ercomp$sigma2$id^0.5
+        sigeps <- glmest$ercomp$sigma2$idiod^0.5
+      }
+      else{
+        m <- match(c("formula", "data", "subset", "na.action"),names(cl),0)
+        lmcl <- cl[c(1,m)]
+        lmcl[[1]] <- as.name("lm")
+        lmcl <- eval(lmcl, parent.frame())
+        eb <- tapply(resid(lmcl), id, mean)[as.character(id)]
+        sig2mu <- var(eb)
+        ew <- resid(lmcl) - eb
+        sig2eta <- var(ew)
+        gamma <- sig2mu / sig2eta
+      }
+      if (other == "sd"){
+        start <- c(coef(lmcl), sd.mu = sqrt(sig2mu), sd.eps = sqrt(sig2eta))
+      }
+      else{
+        start <- c(coef(lmcl), gamma = gamma, sig2eta = sig2eta)
+      }
     }
   }
 
@@ -146,25 +162,16 @@ starting.values <- function(family, link, model, Kw, X, y, id, cl, start){
     if (model == "pooling"){
       if (!ls %in% c(0, K + 1)) stop("irrelevant length for the start vector")
       if (ls == 0){
-        heckit <- FALSE
-        if (heckit){
-          glmest <- glm.fit(X, y > 0, family = binomial(link = 'probit'))
-          bX <- as.numeric(crossprod(t(X), glmest$coefficients))
-          sdeps <- dnorm(bX) / pnorm(bX)
-          lmest <- lm.fit(cbind(X * pnorm(bX), dnorm(bX)), y)
- #        lmest <- lm.fit(cbind(X, sdeps)[y > 0,], y[y > 0])
-          start <- lmest$coefficients
-        }
-        else{
-          m <- match(c("formula", "data", "subset", "na.action"),names(cl),0)
-          lmcl <- cl[c(1,m)]
-          lmcl[[1]] <- as.name("lm")
-          lmcl <- eval(lmcl, parent.frame())
-          sigma <- sqrt(deviance(lmcl))
-          if (TRUE) sigma <- log(sigma)
-#          sigma <- deviance(lmcl)
-          start <- c(coef(lmcl), sigma)
-        }
+        m <- match(c("formula", "data", "subset", "na.action"),names(cl),0)
+        lmcl <- cl[c(1,m)]
+        lmcl[[1]] <- as.name("lm")
+        lmcl <- eval(lmcl, parent.frame())
+        sig2 <- deviance(lmcl) / df.residual(lmcl)
+        if (is.null(other)) other <- "sd"
+        if (other == "var") sigma <- sig2
+        if (other == "sd") sigma <- sqrt(sig2)
+        if (other == "lsd") sigma <- log(sqrt(sig2))
+        start <- c(coef(lmcl), sd.eps = sigma)
       }
     }
     else{
@@ -173,8 +180,14 @@ starting.values <- function(family, link, model, Kw, X, y, id, cl, start){
         startcl$model <- "pooling"
         pglmest <- eval(startcl, parent.frame())
         thestart <- coef(pglmest)
-        if (ls == 1) start <- c(thestart, start)
-        else start <- c(thestart, 0.23)
+        if (ls == 1){
+          start <- c(thestart, start)
+        }
+        else{
+          sigma <- lnl.tobit(coef(pglmest), y = y, X = X, id = id,
+                               link = link, model = "pooling", start.sigma = TRUE)
+          start <- c(thestart, sd.mu = sigma)
+        }
       }
     }
   }

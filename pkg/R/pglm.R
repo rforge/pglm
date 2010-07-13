@@ -12,9 +12,8 @@ negbin <- function(link = c('log'), vlink = c('nb1', 'nb2')){
 pglm <-  function(formula, data, subset, na.action,
                   effect = c('individual','time','twoways'),
                   model  = c('random', 'pooling', 'within', 'between'),
-                  family, index  = NULL, start = NULL, R = 20, ...){
+                  family, other = NULL, index  = NULL, start = NULL, R = 20, ...){
   dots <- list(...)
-  nframe <- length(sys.calls())
   args <- list(model = model, effect = effect)
 
   if (is.character(family)){
@@ -79,22 +78,9 @@ pglm <-  function(formula, data, subset, na.action,
     if (inherits(data, "pdata.frame")) id <- attr(data, "index")[[1]]
     else id <- NULL
   }
-
-  if (FALSE){
-  if (family == "gaussian"){
-    Xwi <- model.matrix(formula, data, model = "within", effect = effect)
-    Xb <- model.matrix(formula, data, model = "Between", effect = effect)
-    Xw <- Xb
-    Xw[, colnames(Xwi)] <- Xwi
-    Xw[, (! colnames(Xb) %in% colnames(Xwi))] <- 0
-    yw <- pmodel.response(formula, data, model= "within", effect = effect)
-    yb <- pmodel.response(formula, data, model= "Between", effect = effect)
-    X <- list(within = Xw, Between = Xb)
-    y <- list(within = yw, Between = yb)
-  }
-}
+  
   # compute the starting vgalues
-  start <- starting.values(family, link, model, Kw, X, y, id, cl, start)
+  start <- starting.values(family, link, model, Kw, X, y, id, cl, start, other)
   if (model == "random" && (! family %in% c("poisson", "negbin", "gaussian")))
       rn <- gauss.quad(R, kind = 'hermite')
 
@@ -113,6 +99,8 @@ pglm <-  function(formula, data, subset, na.action,
   args <- list(param = "start",
                y = "y", X = "X", id = "id", model = "model", link = "link",
                rn = "rn", gradient = FALSE, hessian = FALSE)
+#  if (family == "tobit") args$other <- other
+  if (family %in% c("tobit", "gaussian")) args$other <- "other"
   if (family == "negbin") args$vlink <- "vlink"
   thefunc <- paste("function(start) lnl.", family,
                    "(", argschar(args), ")", sep = "")
@@ -124,11 +112,11 @@ pglm <-  function(formula, data, subset, na.action,
   args$hessian <- TRUE
   thefunc <- paste("function(start) attr(lnl.", family,
                    "(", argschar(args), "), \"hessian\")", sep = "")
-#  ml$hess <- eval(parse(text = thefunc))
+  ml$hess <- eval(parse(text = thefunc))
   
   ml$start <- start
   ml[[1]] <- as.name('maxLik')
-  result <- eval(ml, sys.frame(which = nframe))
+  result <- eval(ml, parent.frame())
   result[c('call', 'args', 'model')] <- list(cl, args, data)
   result
 }

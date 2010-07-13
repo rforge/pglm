@@ -1,8 +1,9 @@
-lnl.tobit <- function(param, y, X, id, model, link, rn, gradient = FALSE, hessian = FALSE,
-                         opposite = FALSE, direction = rep(0, length(param)),
-                         initial.value = NULL, steptol = 1E-01){
-  type <- "lsd"
+lnl.tobit <- function(param, y, X, id, model, link, rn, other = NULL, gradient = FALSE,
+                      hessian = FALSE, start.sigma = FALSE, opposite = FALSE,
+                      direction = rep(0, length(param)), initial.value = NULL, steptol = 1E-01){
+  if (is.null(other)) other <- "sd"
   mills <- function(x) dnorm(x) / pnorm(x)
+  if (is.null(other)) other <- "sd"
   opposite <- ifelse(opposite, -1, +1)
   Ti <- table(id)
   N <- length(y)
@@ -15,9 +16,24 @@ lnl.tobit <- function(param, y, X, id, model, link, rn, gradient = FALSE, hessia
     if (step < steptol) break
     beta <- param[1L:K] + step * direction[1L:K]
     sigma <- param[K+1L] + step * direction[K+1L]
-    if (type == "var") sigma <- sqrt(sigma)
-    if (type == "lsd") sigma <- exp(sigma)
+    if (other == "var") sigma <- sqrt(sigma)
+    if (other == "lsd") sigma <- exp(sigma)
     Xb <- as.numeric(crossprod(t(X), beta))
+    
+    if (start.sigma){
+      ez <- - Xb[y == 0] /sigma
+      ep <- (y - Xb)[y > 0] / sigma
+      mz <- mills(ez)
+      fp <- fs <- numeric(length(y))
+      fs[y == 0] <- - (ez + mz) * mz / sigma^2
+      fs[y >  0] <- - 1 / sigma^2
+      fp[y == 0] <- - mz / sigma
+      fp[y >  0] <- ep / sigma
+      fp <- tapply(fp, id, sum)
+      fs <- tapply(fs, id, sum)
+      return(sqrt(2) * sd(- fp / fs))
+    }
+    
     if (model == "pooling"){
       lnL <- numeric(length = N)
       ez <- - Xb[y == 0] /sigma
@@ -25,7 +41,7 @@ lnl.tobit <- function(param, y, X, id, model, link, rn, gradient = FALSE, hessia
       mz <- mills(ez)
       lnL[y == 0] <- log(pnorm(ez))
       lnL[y  > 0] <- - 0.5 * log(2 * pi) - log(sigma) - 0.5 *ep^2
-      lnl <- opposite * sum(lnL)
+      lnL <- opposite * sum(lnL)
     }
     if (model == "random"){
       smu <- param[K + 2L] + step * direction[K + 2L]
@@ -41,9 +57,9 @@ lnl.tobit <- function(param, y, X, id, model, link, rn, gradient = FALSE, hessia
                      )
       Pir <- lapply(Pitr, function(x) tapply(x, id, prod))
       Li <- Reduce("+", mapply("*", Pir, rn$weights, SIMPLIFY = FALSE)) / sqrt(pi)
-      lnl <- opposite * sum(log(Li))
+      lnL <- opposite * sum(log(Li))
     }
-    if (is.null(initial.value) || lnl <= initial.value) break
+    if (is.null(initial.value) || lnL <= initial.value) break
   }
   if (gradient){
     if (model == "pooling"){
@@ -52,33 +68,39 @@ lnl.tobit <- function(param, y, X, id, model, link, rn, gradient = FALSE, hessia
       gradi[y == 0, K+1L] <- - ez * mz  / (2 * sigma^2)
       gradi[y  > 0, 1L:K] <- ep * X[y  > 0, , drop = FALSE] / sigma
       gradi[y  > 0, K+1L] <- - (1 - ep^2) / (2 * sigma^2)
-      if (type == "sd") gradi[, K+1L] <- gradi[, K+1L] * (2 * sigma)
-      if (type == "lsd") gradi[, K+1L] <- gradi[, K+1L] * (2 * sigma^2)
+      if (other == "sd") gradi[, K+1L] <- gradi[, K+1L] * (2 * sigma)
+      if (other == "lsd") gradi[, K+1L] <- gradi[, K+1L] * (2 * sigma^2)
       gradi <- opposite * gradi
     }
     if (model == "random"){
-      g <- Reduce("+",
-                  mapply(
-                         function(w, x, p){
-                           ez <- - (Xb[y == 0] + sqrt(2) * smu * x) /sigma
-                           ep <- (y - Xb - sqrt(2) * smu * x)[y > 0] / sigma
-                           mz <- mills(ez)
-                           gradi <- matrix(0, nrow = N, ncol = 2)
-                           gradi[y == 0, 1] <- - mz / sigma
-                           gradi[y == 0, 2] <- - ez * mz  / (2 * sigma^2)
-                           gradi[y  > 0, 1] <- ep  / sigma
-                           gradi[y  > 0, 2] <- - (1 - ep^2) / (2 * sigma^2)
-                           gradi <- cbind(gradi, gradi[, 1] * sqrt(2) * x)
-                           w * as.numeric(p[as.character(id)]) * gradi
-                         },
-                         rn$weights, rn$nodes, Pir, SIMPLIFY = FALSE
-                         )
-                  )
-      gradi <- opposite * cbind(g[, 1] * X, g[, 2:3]) /
+      gradi <- Reduce("+",
+                      mapply(
+                             function(w, x, p){
+                               ez <- - (Xb[y == 0] + sqrt(2) * smu * x) /sigma
+                               ep <- (y - Xb - sqrt(2) * smu * x)[y > 0] / sigma
+                               mz <- mills(ez)
+                               gradi <- matrix(0, nrow = N, ncol = 2)
+                               gradi[y == 0, 1] <- - mz / sigma
+                               gradi[y == 0, 2] <- - ez * mz  / (2 * sigma^2)
+                               gradi[y  > 0, 1] <- ep  / sigma
+                               gradi[y  > 0, 2] <- - (1 - ep^2) / (2 * sigma^2)
+                               gradi <- cbind(gradi, gradi[, 1] * sqrt(2) * x)
+                               w * as.numeric(p[as.character(id)]) * gradi
+                             },
+                             rn$weights, rn$nodes, Pir, SIMPLIFY = FALSE
+                             )
+                      )
+      ogradi <- gradi
+      if (other == "sd") gradi[, 2L] <- gradi[, 2L] * (2 * sigma)
+      if (other == "lsd") gradi[, 2L] <- gradi[, 2L] * (2 * sigma^2)
+      gradi <- opposite * cbind(gradi[, 1] * X, gradi[, 2:3]) /
         as.numeric(Li[as.character(id)])/ sqrt(pi)
+      ogradi <- opposite * cbind(ogradi[, 1] * X, ogradi[, 2:3]) /
+        as.numeric(Li[as.character(id)])/ sqrt(pi)
+      
     }
-    attr(lnl, 'gradi') <- gradi
-    attr(lnl, 'gradient') <- apply(gradi, 2, sum)
+    attr(lnL, 'gradi') <- gradi
+    attr(lnL, 'gradient') <- apply(gradi, 2, sum)
   }
   if (hessian){
     if (model == "pooling"){
@@ -90,11 +112,11 @@ lnl.tobit <- function(param, y, X, id, model, link, rn, gradient = FALSE, hessia
       hbs[y  > 0] <- - ep / sigma^3
       hss[y  > 0] <- (1 - 2 * ep^2) / (2 * sigma^4)
       hbb <- crossprod(hbb * X, X)
-      if (type == "sd"){
+      if (other == "sd"){
         hbs <- hbs * (2 * sigma)
         hss <- 4 * sigma^2 * hss + gradi[, K+1L] / sigma
       }
-      if (type == "lsd"){
+      if (other == "lsd"){
         hbs <- hbs * (2 * sigma^2)
         hss <- 2 * gradi[, K+1L] + 4 * sigma^4 * hss
       }
@@ -142,9 +164,18 @@ lnl.tobit <- function(param, y, X, id, model, link, rn, gradient = FALSE, hessia
                   },
                   rn$weights, rn$nodes, Pir, SIMPLIFY = FALSE
                   )
-      H <- Reduce("+", H) - crossprod(apply(gradi, 2, tapply, id, sum))
+      H <- Reduce("+", H) - crossprod(apply(ogradi, 2, tapply, id, sum))
+      if (other == "sd"){
+        H[K+1, c(1:K, K+2)] <- H[c(1:K, K+2), K+1] <- H[K+1, c(1:K, K+2)] * (2 * sigma)
+        H[K+1, K+1] <- 4 * sigma^2 * H[K+1, K+1] + sum(gradi[, K+1L]) / sigma
+      }
+      if (other == "lsd"){
+        H[K+1, c(1:K)] <- H[c(1:K), K+1] <- H[K+1, c(1:K)] * (2 * sigma^2)
+        H[K+2, K+1] <- H[K+1, K+2] <- H[K+2, K+1] * (2 * sigma^2)
+        H[K+1, K+1] <- 4 * sigma^4 * H[K+1, K+1] + 2 * sum(gradi[, K+1L])
+      }
     }
-    attr(lnl, "hessian") <- opposite * H
+    attr(lnL, "hessian") <- opposite * H
   }
-  lnl
+  lnL
 }
