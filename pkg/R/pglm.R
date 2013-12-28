@@ -111,10 +111,10 @@ pglm <-  function(formula, data, subset, na.action,
   ml$logLik <- eval(parse(text = thefunc))
   thefunc <- paste("function(start) attr(lnl.", family,
                    "(", argschar(args), "), \"gradient\")", sep = "")
-  ml$grad <- eval(parse(text = thefunc))
+#  ml$grad <- eval(parse(text = thefunc))
   thefunc <- paste("function(start) attr(lnl.", family,
                    "(", argschar(args), "), \"hessian\")", sep = "")
-  ml$hess <- eval(parse(text = thefunc))
+#  ml$hess <- eval(parse(text = thefunc))
   
   ml$start <- start
   ml[[1]] <- as.name('maxLik')

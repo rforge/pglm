@@ -1,6 +1,6 @@
 Package: pglm
 Version: 0.1-2
-Date: 2013-12-24
+Date: 2013-12-27
 Title: panel generalized linear model
 Authors@R: person("Yves", "Croissant", role = c("aut", "cre"), email = "yves.croissant@univ-reunion.fr")
 Depends: R (>= 1.8.0), maxLik, plm
