@@ -3,10 +3,10 @@ Version: 0.1-2
 Date: 2013-12-27
 Title: panel generalized linear model
 Authors@R: person("Yves", "Croissant", role = c("aut", "cre"), email = "yves.croissant@univ-reunion.fr")
-Depends: R (>= 1.8.0), maxLik, plm
+Depends: R (>= 2.10), maxLik, plm
 Imports: statmod
 Suggests: lmtest, car
-Description: Estimation of panel models for glm-like models: this includes binomial models (logit and probit) count models (poisson and negbin) and ordered models (logit and probit)
+Description: Estimation of panel models for glm-like models: this includes binomial models (logit and probit) count models (poisson and negbin) and ordered models (logit and probit).
 License: GPL (>=2)
 URL: http://www.r-project.org
 
