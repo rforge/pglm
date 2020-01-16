@@ -1,10 +1,10 @@
 Package: pglm
-Version: 0.2-1
-Date: 2017-10-29
+Version: 0.2-2
+Date: 2020-01-16
 Title: Panel Generalized Linear Models
 Authors@R: person("Yves", "Croissant", role = c("aut", "cre"), email = "yves.croissant@univ-reunion.fr")
 Depends: R (>= 2.10), maxLik, plm
-Imports: statmod
+Imports: statmod, Formula
 Suggests: lmtest, car
 Description: Estimation of panel models for glm-like models: this includes binomial models (logit and probit) count models (poisson and negbin) and ordered models (logit and probit).
 License: GPL (>=2)
